@@ -22,9 +22,9 @@ const INIT_USERS = [
 ];
 
 const PERMS = {
-  "Super Admin":  ["dashboard", "users", "attendance", "attendance_mark", "leave", "salary", "reports", "settings"],
-  "HR Manager":   ["dashboard", "users", "attendance", "attendance_mark", "leave", "salary", "reports"],
-  "Supervisor":   ["dashboard", "attendance", "attendance_mark", "leave", "reports"],
+  "Super Admin":  ["dashboard", "users", "attendance", "attendance_mark", "leave", "salary", "reports", "settings", "workorder", "quotation"],
+  "HR Manager":   ["dashboard", "users", "attendance", "attendance_mark", "leave", "salary", "reports", "workorder", "quotation"],
+  "Supervisor":   ["dashboard", "attendance", "attendance_mark", "leave", "reports", "workorder", "quotation"],
   "Employee":     ["dashboard", "attendance", "leave"],
 };
 
@@ -38,6 +38,22 @@ const PERM_LABELS = {
   salary:          { label: "Salary",           color: "badge-red" },
   reports:         { label: "Reports",          color: "badge-blue" },
   settings:        { label: "Settings",         color: "badge-gray" },
+  workorder:       { label: "Work Orders",      color: "badge-gold" },
+  quotation:       { label: "Quotations",       color: "badge-purple" },
+};
+
+// ─── COMPANY INFO (used in WO/Quotation) ──────────────────────────────────────
+const COMPANY_INFO = {
+  name: "Civyx Infra",
+  tagline: "Building Infrastructure, Building Trust",
+  address: "Saurikh, Tirwa Road, Saurikh, Kannauj, Uttar Pradesh - 209728",
+  phone: "+91-60059 72206",
+  email: "info@civyxinfra.com",
+  website: "www.civyxinfra.com",
+  gstin: "09ASVPK6249E1Z6",
+  bank: "State Bank of India",
+  accountNo: "XXXXXXXXXXXX",
+  ifsc: "SBIN0XXXXXX",
 };
 
 const AVATAR_COLORS = ["#1a3a6b","#1a7a4a","#b86a00","#5a3a8a","#c0392b","#2471a3","#117a65","#6e2f8a"];
@@ -364,6 +380,8 @@ const Icon = ({ n, size = 16, col }) => {
     chevron: "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
     info: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
     group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+    workorder: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
+    quotation: "M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM9 13v2h6v-2H9zm0 4v2h6v-2H9zm0-8v2h4V9H9z",
   };
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={col || "currentColor"} style={{ flexShrink: 0 }}>
@@ -385,6 +403,8 @@ export default function App() {
   const [users, setUsersRaw] = useState(() => lsGet("civyx_users", INIT_USERS));
   const [attendance, setAttendanceRaw] = useState(() => lsGet("civyx_attendance", {}));
   const [leaves, setLeavesRaw] = useState(() => lsGet("civyx_leaves", []));
+  const [workOrders, setWorkOrdersRaw] = useState(() => lsGet("civyx_workorders", []));
+  const [quotations, setQuotationsRaw] = useState(() => lsGet("civyx_quotations", []));
   const [settings, setSettingsRaw] = useState(() => lsGet("civyx_settings", {
     companyName: "Civyx Infra",
     deductLeave: true,
@@ -400,6 +420,8 @@ export default function App() {
   const setUsers = (v) => { const next = typeof v === "function" ? v(users) : v; lsSet("civyx_users", next); setUsersRaw(next); };
   const setAttendance = (v) => { const next = typeof v === "function" ? v(attendance) : v; lsSet("civyx_attendance", next); setAttendanceRaw(next); };
   const setLeaves = (v) => { const next = typeof v === "function" ? v(leaves) : v; lsSet("civyx_leaves", next); setLeavesRaw(next); };
+  const setWorkOrders = (v) => { const next = typeof v === "function" ? v(workOrders) : v; lsSet("civyx_workorders", next); setWorkOrdersRaw(next); };
+  const setQuotations = (v) => { const next = typeof v === "function" ? v(quotations) : v; lsSet("civyx_quotations", next); setQuotationsRaw(next); };
   const setSettings = (v) => { const next = typeof v === "function" ? v(settings) : v; lsSet("civyx_settings", next); setSettingsRaw(next); };
 
   const can = (perm) => loggedIn && (PERMS[loggedIn.role] || []).includes(perm);
@@ -421,6 +443,8 @@ export default function App() {
     { id: "leave", label: loggedIn.role === "Employee" ? "My Leaves" : "Leave Management", icon: "leave", perm: "leave" },
     { id: "salary", label: "Salary", icon: "salary", perm: "salary" },
     { id: "reports", label: "Reports", icon: "reports", perm: "reports" },
+    { id: "workorder", label: "Work Orders", icon: "workorder", perm: "workorder" },
+    { id: "quotation", label: "Quotations", icon: "quotation", perm: "quotation" },
     { id: "settings", label: "Settings", icon: "settings", perm: "settings" },
   ].filter(x => can(x.perm));
 
@@ -484,6 +508,8 @@ export default function App() {
             {page === "leave" && <LeavePage users={users} leaves={leaves} setLeaves={setLeaves} loggedIn={loggedIn} can={can} />}
             {page === "salary" && <SalaryPage users={users} attendance={attendance} settings={settings} loggedIn={loggedIn} />}
             {page === "reports" && <ReportsPage users={users} attendance={attendance} leaves={leaves} settings={settings} loggedIn={loggedIn} />}
+            {page === "workorder" && <WorkOrderPage workOrders={workOrders} setWorkOrders={setWorkOrders} loggedIn={loggedIn} />}
+            {page === "quotation" && <QuotationPage quotations={quotations} setQuotations={setQuotations} loggedIn={loggedIn} />}
             {page === "settings" && <SettingsPage settings={settings} setSettings={setSettings} />}
           </div>
         </div>
@@ -2124,11 +2150,7 @@ tr:last-child td{border-bottom:none}
     <tr class="total-row"><td>NET PAYABLE SALARY</td><td style="text-align:right;font-family:'Courier New',monospace;color:#059669;font-size:16px">${fmtCurrency(s.netSalary)}</td></tr>
   </tbody>
 </table>
-<div class="sig-box">
-  <div class="sig"><div class="sig-line">Employee Signature</div></div>
-  <div class="sig"><div class="sig-line">HR Manager Signature</div></div>
-  <div class="sig"><div class="sig-line">Director Signature</div></div>
-</div>
+<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 16px;font-size:11px;color:#0369a1;text-align:center;margin-top:20px">\n  ✦ This is a system-generated document. No physical signature is required for authenticity. ✦\n</div>
 <div class="footer">
   <span>Generated: ${new Date().toLocaleString()}</span>
   <span>${settings.companyName} — Confidential Document</span>
@@ -2219,7 +2241,7 @@ td:first-child{font-weight:600;padding:5px 6px;border:1px solid #e2e8f0;font-siz
   </div>
 </div>
 <div style="margin-top:25px;display:flex;justify-content:space-between">
-  ${["Employee Signature","HR Manager","Authorized Signatory"].map(l => `<div style="text-align:center;width:160px"><div style="border-top:1px solid #94a3b8;padding-top:5px;font-size:10px;color:#64748b">${l}</div></div>`).join("")}
+  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:8px 14px;font-size:10px;color:#0369a1;text-align:center;width:100%">✦ System-generated document — No signature required ✦</div>
 </div>
 <div class="footer"><span>Generated: ${new Date().toLocaleString()}</span><span>CONFIDENTIAL — ${settings.companyName}</span></div>
 </body></html>`;
@@ -2342,11 +2364,600 @@ td{border-bottom:1px solid #e2e8f0;font-size:12px}
     </tr>
   </tbody>
 </table>
-<div class="sig-box">
-  <div class="sig"><div class="sig-line">HR Manager</div></div>
-  <div class="sig"><div class="sig-line">Finance Department</div></div>
-  <div class="sig"><div class="sig-line">Authorized Signatory</div></div>
-</div>
+<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 16px;font-size:11px;color:#0369a1;text-align:center;margin-top:20px">\n  ✦ This is a system-generated document. No physical signature is required for authenticity. ✦\n</div>
 <div class="footer"><span>Generated: ${new Date().toLocaleString()} · Leave Deduction: ${deductLeave ? "Enabled" : "Disabled"}</span><span>CONFIDENTIAL — ${settings.companyName}</span></div>
 </body></html>`;
+}
+// ─── HELPER: generate serial number ──────────────────────────────────────────
+function genSerial(prefix, list) {
+  const year = new Date().getFullYear();
+  const count = (list || []).length + 1;
+  return `${prefix}-${year}-${String(count).padStart(4, "0")}`;
+}
+
+// ─── DEFAULT ROW for WO/Quotation ────────────────────────────────────────────
+const defaultRow = () => ({ id: uid(), srNo: "", workSpec: "", hsnSac: "", unit: "", qty: "", rate: "", amount: "" });
+
+// ─── WORK ORDER PAGE ──────────────────────────────────────────────────────────
+function WorkOrderPage({ workOrders, setWorkOrders, loggedIn }) {
+  const [view, setView] = useState("list"); // list | create | edit
+  const [current, setCurrent] = useState(null);
+
+  const openNew = () => {
+    setCurrent({
+      id: uid(),
+      serialNo: genSerial("WO", workOrders),
+      issuedTo: "",
+      issuedDate: today(),
+      subject: "",
+      showAmount: true,
+      columns: ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"],
+      rows: [defaultRow()],
+      notes: "",
+      status: "Draft",
+      createdBy: loggedIn.name,
+      createdAt: today(),
+    });
+    setView("create");
+  };
+
+  const openEdit = (wo) => { setCurrent({ ...wo, rows: wo.rows.map(r => ({ ...r })) }); setView("edit"); };
+
+  const save = () => {
+    if (!current.issuedTo) return showToast("Issued To is required", "err");
+    if (view === "create") {
+      setWorkOrders(prev => [...prev, current]);
+      showToast("Work Order saved", "ok");
+    } else {
+      setWorkOrders(prev => prev.map(w => w.id === current.id ? current : w));
+      showToast("Work Order updated", "ok");
+    }
+    setView("list");
+    setCurrent(null);
+  };
+
+  const del = (id) => { setWorkOrders(prev => prev.filter(w => w.id !== id)); showToast("Deleted"); };
+
+  const print = (wo) => {
+    const w = window.open("", "_blank");
+    w.document.write(generateWOHTML(wo));
+    w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
+  if (view === "list") return (
+    <div>
+      <div className="page-hdr">
+        <div>
+          <div className="page-title">Work Orders</div>
+          <div className="page-sub">{workOrders.length} total work orders</div>
+        </div>
+        <button className="btn btn-primary" onClick={openNew}><Icon n="add" size={15}/>New Work Order</button>
+      </div>
+      {workOrders.length === 0 ? (
+        <div className="empty"><div className="empty-ic">📋</div><div className="empty-txt">No work orders yet. Create your first one.</div></div>
+      ) : (
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Serial No</th><th>Issued To</th><th>Date</th><th>Subject</th><th>Status</th><th>Created By</th><th>Actions</th></tr></thead>
+            <tbody>
+              {workOrders.map(wo => (
+                <tr key={wo.id}>
+                  <td className="font-mono" style={{fontWeight:700,color:"var(--blue)"}}>{wo.serialNo}</td>
+                  <td style={{fontWeight:600}}>{wo.issuedTo}</td>
+                  <td className="text-muted text-sm">{wo.issuedDate}</td>
+                  <td className="text-sm">{wo.subject || "—"}</td>
+                  <td><span className={`badge ${wo.status === "Final" ? "badge-green" : wo.status === "Cancelled" ? "badge-red" : "badge-orange"}`}>{wo.status}</span></td>
+                  <td className="text-muted text-sm">{wo.createdBy}</td>
+                  <td>
+                    <div className="tbl-actions">
+                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(wo)}><Icon n="edit" size={12}/>Edit</button>
+                      <button className="btn btn-primary btn-xs" onClick={() => print(wo)}><Icon n="print" size={12}/>Print</button>
+                      <button className="btn btn-danger btn-xs" onClick={() => del(wo.id)}><Icon n="del" size={12}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  return <DocEditor type="workorder" doc={current} setDoc={setCurrent} onSave={save} onCancel={() => setView("list")} />;
+}
+
+// ─── QUOTATION PAGE ───────────────────────────────────────────────────────────
+function QuotationPage({ quotations, setQuotations, loggedIn }) {
+  const [view, setView] = useState("list");
+  const [current, setCurrent] = useState(null);
+
+  const openNew = () => {
+    setCurrent({
+      id: uid(),
+      serialNo: genSerial("QT", quotations),
+      issuedTo: "",
+      issuedDate: today(),
+      subject: "",
+      showAmount: true,
+      columns: ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"],
+      rows: [defaultRow()],
+      notes: "",
+      status: "Draft",
+      createdBy: loggedIn.name,
+      createdAt: today(),
+    });
+    setView("create");
+  };
+
+  const openEdit = (q) => { setCurrent({ ...q, rows: q.rows.map(r => ({ ...r })) }); setView("edit"); };
+  const save = () => {
+    if (!current.issuedTo) return showToast("Issued To is required", "err");
+    if (view === "create") {
+      setQuotations(prev => [...prev, current]);
+      showToast("Quotation saved", "ok");
+    } else {
+      setQuotations(prev => prev.map(q => q.id === current.id ? current : q));
+      showToast("Quotation updated", "ok");
+    }
+    setView("list");
+    setCurrent(null);
+  };
+
+  const del = (id) => { setQuotations(prev => prev.filter(q => q.id !== id)); showToast("Deleted"); };
+
+  const print = (q) => {
+    const w = window.open("", "_blank");
+    w.document.write(generateQTHTML(q));
+    w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
+  if (view === "list") return (
+    <div>
+      <div className="page-hdr">
+        <div>
+          <div className="page-title">Quotations</div>
+          <div className="page-sub">{quotations.length} total quotations</div>
+        </div>
+        <button className="btn btn-primary" onClick={openNew}><Icon n="add" size={15}/>New Quotation</button>
+      </div>
+      {quotations.length === 0 ? (
+        <div className="empty"><div className="empty-ic">📄</div><div className="empty-txt">No quotations yet. Create your first one.</div></div>
+      ) : (
+        <div className="tbl-wrap">
+          <table>
+            <thead><tr><th>Serial No</th><th>Issued To</th><th>Date</th><th>Subject</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {quotations.map(q => (
+                <tr key={q.id}>
+                  <td className="font-mono" style={{fontWeight:700,color:"var(--purple)"}}>{q.serialNo}</td>
+                  <td style={{fontWeight:600}}>{q.issuedTo}</td>
+                  <td className="text-muted text-sm">{q.issuedDate}</td>
+                  <td className="text-sm">{q.subject || "—"}</td>
+                  <td><span className={`badge ${q.status === "Accepted" ? "badge-green" : q.status === "Rejected" ? "badge-red" : q.status === "Sent" ? "badge-blue" : "badge-orange"}`}>{q.status}</span></td>
+                  <td>
+                    <div className="tbl-actions">
+                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(q)}><Icon n="edit" size={12}/>Edit</button>
+                      <button className="btn btn-primary btn-xs" onClick={() => print(q)}><Icon n="print" size={12}/>Print</button>
+                      <button className="btn btn-danger btn-xs" onClick={() => del(q.id)}><Icon n="del" size={12}/></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  return <DocEditor type="quotation" doc={current} setDoc={setCurrent} onSave={save} onCancel={() => setView("list")} />;
+}
+
+// ─── SHARED DOC EDITOR (Work Order + Quotation) ────────────────────────────────
+const COL_LABELS = { srNo: "Sr. No", workSpec: "Work Specifications", hsnSac: "HSN/SAC Code", unit: "Unit", qty: "Qty", rate: "Rate", amount: "Amount" };
+const ALL_COLS = ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"];
+
+function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
+  const isWO = type === "workorder";
+
+  const setField = (k, v) => setDoc(p => ({ ...p, [k]: v }));
+  const setRow = (rowId, field, val) => setDoc(p => ({
+    ...p,
+    rows: p.rows.map(r => {
+      if (r.id !== rowId) return r;
+      const updated = { ...r, [field]: val };
+      if ((field === "qty" || field === "rate") && p.showAmount) {
+        const q = parseFloat(field === "qty" ? val : r.qty) || 0;
+        const rt = parseFloat(field === "rate" ? val : r.rate) || 0;
+        updated.amount = q && rt ? (q * rt).toFixed(2) : "";
+      }
+      return updated;
+    })
+  }));
+
+  const addRow = () => setDoc(p => ({ ...p, rows: [...p.rows, defaultRow()] }));
+  const removeRow = (rowId) => setDoc(p => ({ ...p, rows: p.rows.filter(r => r.id !== rowId) }));
+
+  const toggleCol = (col) => {
+    setDoc(p => {
+      const cols = p.columns.includes(col)
+        ? p.columns.filter(c => c !== col)
+        : [...p.columns, col].sort((a, b) => ALL_COLS.indexOf(a) - ALL_COLS.indexOf(b));
+      return { ...p, columns: cols };
+    });
+  };
+
+  const totalAmount = doc.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+
+  const statusOptions = isWO
+    ? ["Draft", "Issued", "In Progress", "Completed", "Cancelled", "Final"]
+    : ["Draft", "Sent", "Accepted", "Rejected", "Expired"];
+
+  return (
+    <div>
+      <div className="page-hdr">
+        <div>
+          <div className="page-title">{isWO ? "Work Order" : "Quotation"} Editor</div>
+          <div className="page-sub">Serial: <strong>{doc.serialNo}</strong></div>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" onClick={onSave}><Icon n="mark" size={14}/>Save</button>
+        </div>
+      </div>
+
+      {/* Header Details */}
+      <div className="card mb-3">
+        <div className="card-hdr"><div className="card-title">Document Details</div></div>
+        <div className="form-grid">
+          <div className="form-group">
+            <label>Serial Number (Auto)</label>
+            <input value={doc.serialNo} onChange={e => setField("serialNo", e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Status</label>
+            <select value={doc.status} onChange={e => setField("status", e.target.value)}>
+              {statusOptions.map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="form-group full">
+            <label>Issued To *</label>
+            <input value={doc.issuedTo} onChange={e => setField("issuedTo", e.target.value)} placeholder="Company / Person name, address…" />
+          </div>
+          <div className="form-group">
+            <label>{isWO ? "Issue Date" : "Quotation Date"}</label>
+            <input type="date" value={doc.issuedDate} onChange={e => setField("issuedDate", e.target.value)} />
+          </div>
+          <div className={`form-group ${isWO ? "" : "full"}`}>
+            <label>Subject / Reference</label>
+            <input value={doc.subject || ""} onChange={e => setField("subject", e.target.value)} placeholder="Brief description of the work…" />
+          </div>
+        </div>
+      </div>
+
+      {/* Column Config */}
+      <div className="card mb-3">
+        <div className="card-hdr">
+          <div className="card-title">Table Columns</div>
+          <div className="card-sub">Toggle which columns appear in the document</div>
+        </div>
+        <div className="flex gap-2" style={{flexWrap:"wrap"}}>
+          {ALL_COLS.map(col => {
+            const active = doc.columns.includes(col);
+            return (
+              <button key={col} onClick={() => toggleCol(col)}
+                style={{
+                  padding: ".35rem .85rem", borderRadius: 6, fontSize: ".78rem", fontWeight: 700,
+                  fontFamily: "inherit", cursor: "pointer", border: "2px solid",
+                  borderColor: active ? "var(--blue)" : "var(--border2)",
+                  background: active ? "var(--blue)" : "var(--white)",
+                  color: active ? "#fff" : "var(--text3)",
+                  transition: "all .15s",
+                }}>
+                {COL_LABELS[col]}
+              </button>
+            );
+          })}
+          <div className="flex items-center gap-2" style={{marginLeft:"auto"}}>
+            <div className="toggle" onClick={() => setField("showAmount", !doc.showAmount)}>
+              <div className={`toggle-track ${doc.showAmount ? "on" : ""}`}><div className="toggle-thumb"/></div>
+              <span className="toggle-label" style={{fontSize:".78rem"}}>Auto-calculate Amount</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table Editor */}
+      <div className="card mb-3">
+        <div className="card-hdr">
+          <div className="card-title">Work Items</div>
+          <button className="btn btn-success btn-sm" onClick={addRow}><Icon n="add" size={13}/>Add Row</button>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
+            <thead>
+              <tr>
+                {doc.columns.map(col => (
+                  <th key={col} style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",textAlign:"left",whiteSpace:"nowrap"}}>
+                    {COL_LABELS[col]}
+                  </th>
+                ))}
+                <th style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",width:40}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {doc.rows.map((row, idx) => (
+                <tr key={row.id} style={{borderBottom:"1px solid var(--border)"}}>
+                  {doc.columns.map(col => (
+                    <td key={col} style={{padding:".3rem .4rem"}}>
+                      {col === "workSpec" ? (
+                        <textarea
+                          value={row[col] || ""}
+                          onChange={e => setRow(row.id, col, e.target.value)}
+                          style={{width:"100%",minHeight:60,fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",resize:"vertical",fontFamily:"inherit"}}
+                          placeholder="Describe the work specifications…"
+                        />
+                      ) : (
+                        <input
+                          value={row[col] || ""}
+                          onChange={e => setRow(row.id, col, e.target.value)}
+                          style={{width:"100%",fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",fontFamily:"inherit"}}
+                          placeholder={col === "srNo" ? String(idx + 1) : ""}
+                          type={["qty","rate","amount"].includes(col) ? "number" : "text"}
+                          readOnly={col === "amount" && doc.showAmount}
+                        />
+                      )}
+                    </td>
+                  ))}
+                  <td style={{padding:".3rem .4rem",textAlign:"center"}}>
+                    <button onClick={() => removeRow(row.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red)",fontSize:".9rem",padding:".2rem"}}>✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {doc.columns.includes("amount") && (
+              <tfoot>
+                <tr>
+                  <td colSpan={doc.columns.length - 1} style={{padding:".6rem .7rem",textAlign:"right",fontWeight:700,fontSize:".88rem",background:"var(--bg3)"}}>Total Amount:</td>
+                  <td style={{padding:".6rem .7rem",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"var(--green)",background:"var(--green-lt)"}}>
+                    {totalAmount > 0 ? totalAmount.toFixed(2) : "—"}
+                  </td>
+                  <td style={{background:"var(--bg3)"}}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div className="card mb-3">
+        <div className="card-hdr"><div className="card-title">Notes / Terms & Conditions</div><div className="card-sub">No character limit — add as much detail as needed</div></div>
+        <textarea
+          value={doc.notes || ""}
+          onChange={e => setField("notes", e.target.value)}
+          placeholder="Add payment terms, delivery conditions, warranty info, special instructions, or any notes here… (No limit)"
+          style={{width:"100%",minHeight:140,fontSize:".85rem",border:"1px solid var(--border2)",borderRadius:6,padding:".7rem .9rem",fontFamily:"inherit",resize:"vertical"}}
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex justify-end gap-2">
+        <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary" onClick={onSave}><Icon n="mark" size={14}/>Save {isWO ? "Work Order" : "Quotation"}</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── PRINT: WORK ORDER HTML ────────────────────────────────────────────────────
+function generateWOHTML(wo) {
+  const totalAmount = wo.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const colsHtml = wo.columns.map(col => `<th>${COL_LABELS[col]}</th>`).join("");
+  const rowsHtml = wo.rows.map((row, idx) => {
+    const cells = wo.columns.map(col => {
+      const val = col === "srNo" ? (row[col] || idx + 1) : (row[col] || "");
+      return `<td style="vertical-align:top;${col === "workSpec" ? "text-align:left;min-width:200px;" : "text-align:center;"}">${val}</td>`;
+    }).join("");
+    return `<tr style="border-bottom:1px solid #e2e8f0">${cells}</tr>`;
+  }).join("");
+
+  const totalRow = wo.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:#f0fdf4;font-weight:700;font-size:13px"><td colspan="${wo.columns.length - 1}" style="text-align:right;padding:8px 12px;border-top:2px solid #0d1b2e">TOTAL AMOUNT</td><td style="text-align:center;padding:8px 12px;border-top:2px solid #0d1b2e;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
+    : "";
+
+  return `<!DOCTYPE html><html><head><title>Work Order ${wo.serialNo}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#0f172a;background:#fff;font-size:12px}
+.page{max-width:800px;margin:0 auto;padding:30px}
+.top-bar{background:#0d1b2e;color:#fff;padding:8px 20px;font-size:11px;letter-spacing:.05em;text-align:right;border-radius:0 0 6px 6px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 16px;border-bottom:3px solid #0d1b2e;margin-bottom:18px}
+.company-block{display:flex;align-items:flex-start;gap:14px}
+.company-name{font-size:22px;font-weight:800;color:#0d1b2e;letter-spacing:-.5px}
+.company-tagline{font-size:10px;color:#64748b;margin-top:2px;font-style:italic}
+.company-details{font-size:10px;color:#64748b;margin-top:6px;line-height:1.7}
+.doc-block{text-align:right}
+.doc-type{font-size:22px;font-weight:900;color:#1854d4;letter-spacing:2px;text-transform:uppercase}
+.doc-serial{font-size:14px;font-weight:700;font-family:'Courier New',monospace;color:#0d1b2e;margin-top:4px}
+.doc-date{font-size:11px;color:#64748b;margin-top:3px}
+.issued-box{display:flex;gap:20px;margin-bottom:16px}
+.issued-card{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 16px}
+.issued-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin-bottom:4px}
+.issued-value{font-size:13px;font-weight:600;color:#0f172a;line-height:1.5}
+.subject-bar{background:#1854d4;color:#fff;padding:8px 16px;border-radius:4px;font-size:12px;font-weight:600;margin-bottom:16px;letter-spacing:.02em}
+table{width:100%;border-collapse:collapse;margin-bottom:14px}
+thead{background:#0d1b2e}
+th{color:#fff;padding:8px 12px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:center}
+th:first-child{text-align:left}
+td{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}
+tbody tr:hover{background:#f8fafc}
+.notes-section{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:14px 16px;margin-bottom:16px}
+.notes-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin-bottom:6px}
+.notes-text{font-size:12px;color:#0f172a;white-space:pre-wrap;line-height:1.7}
+.footer-bar{display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;margin-top:10px}
+.auto-gen-box{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:8px 14px;font-size:10px;color:#0369a1;text-align:center;margin-top:14px}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;margin-left:8px}
+@media print{body{padding:0}.page{padding:15px}.top-bar{display:none}@page{margin:10mm}}
+</style></head><body>
+<div class="top-bar">CIVYX INFRA · OFFICIAL DOCUMENT · ${new Date().toLocaleDateString()}</div>
+<div class="page">
+<div class="header">
+  <div class="company-block">
+    <img src="${LOGO_B64}" alt="Civyx Infra" style="width:64px;height:64px;object-fit:contain"/>
+    <div>
+      <div class="company-name">${COMPANY_INFO.name}</div>
+      <div class="company-tagline">${COMPANY_INFO.tagline}</div>
+      <div class="company-details">
+        ${COMPANY_INFO.address}<br/>
+        Ph: ${COMPANY_INFO.phone} &nbsp;|&nbsp; Email: ${COMPANY_INFO.email}<br/>
+        Website: ${COMPANY_INFO.website}<br/>
+        GSTIN: ${COMPANY_INFO.gstin}
+      </div>
+    </div>
+  </div>
+  <div class="doc-block">
+    <div class="doc-type">Work Order</div>
+    <div class="doc-serial">${wo.serialNo}</div>
+    <div class="doc-date">Date: ${wo.issuedDate}</div>
+    <div class="doc-date" style="margin-top:6px"><span class="status-badge">${wo.status}</span></div>
+  </div>
+</div>
+
+${wo.subject ? `<div class="subject-bar">Re: ${wo.subject}</div>` : ""}
+
+<div class="issued-box">
+  <div class="issued-card">
+    <div class="issued-label">Issued To</div>
+    <div class="issued-value">${wo.issuedTo}</div>
+  </div>
+  <div class="issued-card" style="flex:0 0 220px">
+    <div class="issued-label">Issued By</div>
+    <div class="issued-value">${COMPANY_INFO.name}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px">${wo.createdBy} · ${wo.createdAt}</div>
+  </div>
+</div>
+
+<table>
+  <thead><tr>${colsHtml}</tr></thead>
+  <tbody>${rowsHtml}</tbody>
+  ${totalRow}
+</table>
+
+${wo.notes ? `<div class="notes-section"><div class="notes-label">Notes / Terms & Conditions</div><div class="notes-text">${wo.notes}</div></div>` : ""}
+
+<div class="auto-gen-box">✦ This is a system-generated Work Order. No physical signature is required for authenticity. Reference: ${wo.serialNo} ✦</div>
+<div class="footer-bar">
+  <span>Generated: ${new Date().toLocaleString()} · ${COMPANY_INFO.name} ERP System</span>
+  <span>OFFICIAL DOCUMENT — ${wo.serialNo}</span>
+</div>
+</div></body></html>`;
+}
+
+// ─── PRINT: QUOTATION HTML ─────────────────────────────────────────────────────
+function generateQTHTML(q) {
+  const totalAmount = q.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const colsHtml = q.columns.map(col => `<th>${COL_LABELS[col]}</th>`).join("");
+  const rowsHtml = q.rows.map((row, idx) => {
+    const cells = q.columns.map(col => {
+      const val = col === "srNo" ? (row[col] || idx + 1) : (row[col] || "");
+      return `<td style="vertical-align:top;${col === "workSpec" ? "text-align:left;min-width:200px;" : "text-align:center;"}">${val}</td>`;
+    }).join("");
+    return `<tr style="border-bottom:1px solid #e2e8f0">${cells}</tr>`;
+  }).join("");
+
+  const totalRow = q.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:#f0fdf4;font-weight:700;font-size:13px"><td colspan="${q.columns.length - 1}" style="text-align:right;padding:8px 12px;border-top:2px solid #0d1b2e">TOTAL AMOUNT</td><td style="text-align:center;padding:8px 12px;border-top:2px solid #0d1b2e;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
+    : "";
+
+  return `<!DOCTYPE html><html><head><title>Quotation ${q.serialNo}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#0f172a;background:#fff;font-size:12px}
+.page{max-width:800px;margin:0 auto;padding:30px}
+.top-bar{background:linear-gradient(90deg,#1854d4,#7c3aed);color:#fff;padding:8px 20px;font-size:11px;letter-spacing:.05em;text-align:right;border-radius:0 0 6px 6px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 0 16px;border-bottom:3px solid #1854d4;margin-bottom:18px}
+.company-block{display:flex;align-items:flex-start;gap:14px}
+.company-name{font-size:22px;font-weight:800;color:#0d1b2e;letter-spacing:-.5px}
+.company-tagline{font-size:10px;color:#64748b;margin-top:2px;font-style:italic}
+.company-details{font-size:10px;color:#64748b;margin-top:6px;line-height:1.7}
+.doc-block{text-align:right}
+.doc-type{font-size:22px;font-weight:900;color:#7c3aed;letter-spacing:2px;text-transform:uppercase}
+.doc-serial{font-size:14px;font-weight:700;font-family:'Courier New',monospace;color:#0d1b2e;margin-top:4px}
+.doc-date{font-size:11px;color:#64748b;margin-top:3px}
+.issued-box{display:flex;gap:20px;margin-bottom:16px}
+.issued-card{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 16px}
+.issued-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin-bottom:4px}
+.issued-value{font-size:13px;font-weight:600;color:#0f172a;line-height:1.5}
+.subject-bar{background:linear-gradient(90deg,#7c3aed,#1854d4);color:#fff;padding:8px 16px;border-radius:4px;font-size:12px;font-weight:600;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;margin-bottom:14px}
+thead{background:linear-gradient(90deg,#0d1b2e,#1854d4)}
+th{color:#fff;padding:8px 12px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:center}
+th:first-child{text-align:left}
+td{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}
+tbody tr:nth-child(even){background:#f8fafc}
+.notes-section{background:#faf5ff;border:1px solid #ddd6fe;border-radius:6px;padding:14px 16px;margin-bottom:16px}
+.notes-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c3aed;margin-bottom:6px}
+.notes-text{font-size:12px;color:#0f172a;white-space:pre-wrap;line-height:1.7}
+.validity-box{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 14px;font-size:11px;color:#b45309;font-weight:600;margin-bottom:14px;text-align:center}
+.footer-bar{display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;margin-top:10px}
+.auto-gen-box{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:8px 14px;font-size:10px;color:#7c3aed;text-align:center;margin-top:14px}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#ede9fe;color:#7c3aed;margin-left:8px}
+@media print{body{padding:0}.page{padding:15px}.top-bar{display:none}@page{margin:10mm}}
+</style></head><body>
+<div class="top-bar">CIVYX INFRA · QUOTATION · ${new Date().toLocaleDateString()}</div>
+<div class="page">
+<div class="header">
+  <div class="company-block">
+    <img src="${LOGO_B64}" alt="Civyx Infra" style="width:64px;height:64px;object-fit:contain"/>
+    <div>
+      <div class="company-name">${COMPANY_INFO.name}</div>
+      <div class="company-tagline">${COMPANY_INFO.tagline}</div>
+      <div class="company-details">
+        ${COMPANY_INFO.address}<br/>
+        Ph: ${COMPANY_INFO.phone} &nbsp;|&nbsp; Email: ${COMPANY_INFO.email}<br/>
+        Website: ${COMPANY_INFO.website}<br/>
+        GSTIN: ${COMPANY_INFO.gstin}
+      </div>
+    </div>
+  </div>
+  <div class="doc-block">
+    <div class="doc-type">Quotation</div>
+    <div class="doc-serial">${q.serialNo}</div>
+    <div class="doc-date">Date: ${q.issuedDate}</div>
+    <div class="doc-date" style="margin-top:6px"><span class="status-badge">${q.status}</span></div>
+  </div>
+</div>
+
+${q.subject ? `<div class="subject-bar">Re: ${q.subject}</div>` : ""}
+
+<div class="issued-box">
+  <div class="issued-card">
+    <div class="issued-label">Quotation For</div>
+    <div class="issued-value">${q.issuedTo}</div>
+  </div>
+  <div class="issued-card" style="flex:0 0 220px">
+    <div class="issued-label">Prepared By</div>
+    <div class="issued-value">${COMPANY_INFO.name}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px">${q.createdBy} · ${q.createdAt}</div>
+  </div>
+</div>
+
+<table>
+  <thead><tr>${colsHtml}</tr></thead>
+  <tbody>${rowsHtml}</tbody>
+  ${totalRow}
+</table>
+
+${q.notes ? `<div class="notes-section"><div class="notes-label">Terms, Conditions & Notes</div><div class="notes-text">${q.notes}</div></div>` : ""}
+
+<div class="auto-gen-box">✦ This is a system-generated Quotation. No physical signature is required for authenticity. Reference: ${q.serialNo} ✦</div>
+<div class="footer-bar">
+  <span>Generated: ${new Date().toLocaleString()} · ${COMPANY_INFO.name} ERP System</span>
+  <span>OFFICIAL QUOTATION — ${q.serialNo}</span>
+</div>
+</div></body></html>`;
 }
