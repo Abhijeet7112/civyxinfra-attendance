@@ -2376,7 +2376,11 @@ function genSerial(prefix, list) {
 }
 
 // ─── DEFAULT ROW for WO/Quotation ────────────────────────────────────────────
-const defaultRow = () => ({ id: uid(), srNo: "", workSpec: "", hsnSac: "", unit: "", qty: "", rate: "", amount: "" });
+const defaultRow = (extraKeys = []) => {
+  const base = { id: uid(), srNo: "", workSpec: "", hsnSac: "", unit: "", qty: "", rate: "", amount: "" };
+  extraKeys.forEach(k => { base[k] = ""; });
+  return base;
+};
 
 // ─── WORK ORDER PAGE ──────────────────────────────────────────────────────────
 function WorkOrderPage({ workOrders, setWorkOrders, loggedIn }) {
@@ -2390,11 +2394,20 @@ function WorkOrderPage({ workOrders, setWorkOrders, loggedIn }) {
       issuedTo: "",
       issuedDate: today(),
       subject: "",
+      vendorGstin: "",
+      vendorContactName: "",
+      vendorContactNo: "",
+      vendorRemarks: "",
       showAmount: true,
       columns: ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"],
+      customCols: [],
+      customColLabels: {},
       rows: [defaultRow()],
       notes: "",
       status: "Draft",
+      gstEnabled: false,
+      gstPercent: 18,
+      gstType: "igst",
       createdBy: loggedIn.name,
       createdAt: today(),
     });
@@ -2480,11 +2493,20 @@ function QuotationPage({ quotations, setQuotations, loggedIn }) {
       issuedTo: "",
       issuedDate: today(),
       subject: "",
+      vendorGstin: "",
+      vendorContactName: "",
+      vendorContactNo: "",
+      vendorRemarks: "",
       showAmount: true,
       columns: ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"],
+      customCols: [],
+      customColLabels: {},
       rows: [defaultRow()],
       notes: "",
       status: "Draft",
+      gstEnabled: false,
+      gstPercent: 18,
+      gstType: "igst",
       createdBy: loggedIn.name,
       createdAt: today(),
     });
@@ -2557,11 +2579,213 @@ function QuotationPage({ quotations, setQuotations, loggedIn }) {
 }
 
 // ─── SHARED DOC EDITOR (Work Order + Quotation) ────────────────────────────────
-const COL_LABELS = { srNo: "Sr. No", workSpec: "Work Specifications", hsnSac: "HSN/SAC Code", unit: "Unit", qty: "Qty", rate: "Rate", amount: "Amount" };
+const BASE_COL_LABELS = { srNo: "Sr. No", workSpec: "Work Specifications", hsnSac: "HSN/SAC Code", unit: "Unit", qty: "Qty", rate: "Rate", amount: "Amount" };
+const COL_LABELS = BASE_COL_LABELS; // kept for compat; custom cols use doc.customColLabels
 const ALL_COLS = ["srNo", "workSpec", "hsnSac", "unit", "qty", "rate", "amount"];
+
+// ─── RICH TEXT TOOLBAR ───────────────────────────────────────────────────────
+function RichToolbar({ onFormat }) {
+  // execCommand fontSize uses 1-7 scale; map to readable labels
+  const FONT_SIZES = [
+    { label: "10px", val: "1" }, { label: "12px", val: "2" }, { label: "14px", val: "3" },
+    { label: "16px", val: "4" }, { label: "18px", val: "5" }, { label: "24px", val: "6" }, { label: "32px", val: "7" },
+  ];
+  const COLORS = ["#0f172a","#1854d4","#059669","#dc2626","#d97706","#7c3aed","#0891b2","#be185d"];
+  const [selSize, setSelSize] = useState("3");
+  const [selColor, setSelColor] = useState("#0f172a");
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:".4rem", flexWrap:"wrap", background:"var(--bg3)", border:"1px solid var(--border)", borderRadius:"6px 6px 0 0", padding:".4rem .7rem", borderBottom:"none" }}>
+      <button onClick={() => onFormat("bold")} title="Bold" style={{ fontWeight:800, width:28, height:28, borderRadius:4, border:"1px solid var(--border2)", background:"var(--white)", cursor:"pointer", fontSize:"1rem", color:"var(--text)", display:"flex", alignItems:"center", justifyContent:"center" }}>B</button>
+      <button onClick={() => onFormat("italic")} title="Italic" style={{ fontStyle:"italic", width:28, height:28, borderRadius:4, border:"1px solid var(--border2)", background:"var(--white)", cursor:"pointer", fontSize:"1rem", color:"var(--text)", display:"flex", alignItems:"center", justifyContent:"center" }}>I</button>
+      <button onClick={() => onFormat("underline")} title="Underline" style={{ textDecoration:"underline", width:28, height:28, borderRadius:4, border:"1px solid var(--border2)", background:"var(--white)", cursor:"pointer", fontSize:"1rem", color:"var(--text)", display:"flex", alignItems:"center", justifyContent:"center" }}>U</button>
+      <div style={{ width:1, height:20, background:"var(--border2)", margin:"0 .2rem" }} />
+      <select value={selSize} onChange={e => { setSelSize(e.target.value); onFormat("size", e.target.value); }} style={{ fontSize:".75rem", padding:".2rem .4rem", border:"1px solid var(--border2)", borderRadius:4, background:"var(--white)", width:70, cursor:"pointer" }}>
+        {FONT_SIZES.map(s => <option key={s.val} value={s.val}>{s.label}</option>)}
+      </select>
+      <div style={{ width:1, height:20, background:"var(--border2)", margin:"0 .2rem" }} />
+      <div style={{ display:"flex", gap:".2rem", alignItems:"center" }}>
+        {COLORS.map(c => (
+          <button key={c} onClick={() => { setSelColor(c); onFormat("color", c); }} title={c}
+            style={{ width:18, height:18, borderRadius:"50%", background:c, border: selColor === c ? "2.5px solid #0f172a" : "1px solid var(--border2)", cursor:"pointer", padding:0, flexShrink:0 }} />
+        ))}
+      </div>
+      <span style={{ fontSize:".68rem", color:"var(--text3)", marginLeft:".3rem" }}>Select text first, then format</span>
+    </div>
+  );
+}
 
 function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
   const isWO = type === "workorder";
+  const [newColName, setNewColName] = useState("");
+  const [dragCol, setDragCol] = useState(null);
+  const [tableMode, setTableMode] = useState("builtin"); // "builtin" | "excel"
+  const [excelPasteText, setExcelPasteText] = useState("");
+  const [excelPreview, setExcelPreview] = useState(null); // array of arrays
+  const [headerRowIdx, setHeaderRowIdx] = useState(null); // null = no header, 0+ = index of header row
+  const [detectedColMap, setDetectedColMap] = useState(null); // { excelIdx -> colKey }
+
+  // ── PROPER TSV parser: handles quoted fields with embedded newlines/tabs ──
+  const parseTSV = (text) => {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      const next = text[i + 1];
+      if (inQuotes) {
+        if (ch === '"' && next === '"') { cell += '"'; i++; }      // escaped quote ""
+        else if (ch === '"') { inQuotes = false; }                  // end quote
+        else { cell += ch; }                                         // content inside quotes
+      } else {
+        if (ch === '"') { inQuotes = true; }
+        else if (ch === '\t') { row.push(cell); cell = ''; }
+        else if (ch === '\n' || (ch === '\r' && next === '\n')) {
+          if (ch === '\r') i++;
+          row.push(cell); rows.push(row); row = []; cell = '';
+        } else if (ch === '\r') { row.push(cell); rows.push(row); row = []; cell = ''; }
+        else { cell += ch; }
+      }
+    }
+    if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
+    return rows.filter(r => r.length > 0); // remove fully-empty rows
+  };
+
+  // ── Clean number values: remove commas, currency symbols ──
+  const cleanNum = (val) => {
+    if (!val) return '';
+    const s = val.replace(/[,₹$€£\s]/g, '').trim();
+    return s === '' ? '' : s;
+  };
+
+  // ── Column label alias map ──
+  const buildLabelMap = () => {
+    const map = {};
+    Object.entries(BASE_COL_LABELS).forEach(([key, label]) => {
+      map[label.toLowerCase()] = key;
+      map[key.toLowerCase()] = key;
+    });
+    Object.entries(doc.customColLabels || {}).forEach(([key, label]) => {
+      map[(label || '').toLowerCase()] = key;
+    });
+    const aliases = {
+      // Sr No
+      "sr": "srNo", "sr no": "srNo", "sr.no": "srNo", "s.no": "srNo", "s. no": "srNo",
+      "no.": "srNo", "no": "srNo", "#": "srNo", "sl no": "srNo", "sl.no": "srNo", "sn": "srNo",
+      // Work Spec
+      "description": "workSpec", "item description": "workSpec", "work description": "workSpec",
+      "work": "workSpec", "spec": "workSpec", "item": "workSpec", "particulars": "workSpec",
+      "details": "workSpec", "scope": "workSpec", "scope of work": "workSpec",
+      "material": "workSpec", "material description": "workSpec", "product": "workSpec",
+      // HSN/SAC
+      "hsn": "hsnSac", "sac": "hsnSac", "hsn code": "hsnSac", "sac code": "hsnSac",
+      "hsn/sac": "hsnSac", "hsn sac": "hsnSac", "hsn no": "hsnSac",
+      // Unit
+      "uom": "unit", "units": "unit", "unit of measure": "unit",
+      // Qty
+      "quantity": "qty", "nos": "qty", "no. of items": "qty", "number": "qty",
+      "count": "qty", "total qty": "qty",
+      // Rate
+      "price": "rate", "unit price": "rate", "rate/unit": "rate", "unit rate": "rate",
+      "per unit": "rate", "basic rate": "rate", "cost": "rate", "unit cost": "rate",
+      // Amount
+      "total": "amount", "total amount": "amount", "total price": "amount",
+      "value": "amount", "amt": "amount", "amount (rs.)": "amount",
+      "total value": "amount", "gross": "amount", "net amount": "amount",
+    };
+    Object.entries(aliases).forEach(([alias, key]) => { map[alias] = key; });
+    return map;
+  };
+
+  // ── Detect column mapping from a header row ──
+  const detectColsFromHeader = (headerCells) => {
+    const labelMap = buildLabelMap();
+    const activeCols = doc.columns.filter(c => ALL_COLS.includes(c) || (doc.customCols || []).includes(c));
+    const colMap = {};
+    const usedDocCols = new Set();
+    headerCells.forEach((cell, i) => {
+      // normalize: collapse whitespace and newlines, lowercase
+      const norm = (cell || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      const matched = labelMap[norm];
+      if (matched && activeCols.includes(matched) && !usedDocCols.has(matched)) {
+        colMap[i] = matched;
+        usedDocCols.add(matched);
+      }
+    });
+    return colMap;
+  };
+
+  // ── Auto-find best header row index (first row that has the most column matches) ──
+  const autoFindHeaderRow = (parsedRows) => {
+    let bestIdx = -1;
+    let bestScore = 0;
+    parsedRows.slice(0, 5).forEach((row, i) => { // check first 5 rows only
+      const colMap = detectColsFromHeader(row);
+      const score = Object.keys(colMap).length;
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    });
+    return bestScore > 0 ? bestIdx : -1; // -1 = no header detected
+  };
+
+  const handleExcelTextChange = (text) => {
+    setExcelPasteText(text);
+    if (!text.trim()) {
+      setExcelPreview(null); setDetectedColMap(null); setHeaderRowIdx(null); return;
+    }
+    const parsed = parseTSV(text);
+    setExcelPreview(parsed);
+    // Auto-detect header row
+    const hdrIdx = autoFindHeaderRow(parsed);
+    if (hdrIdx >= 0) {
+      setHeaderRowIdx(hdrIdx);
+      setDetectedColMap(detectColsFromHeader(parsed[hdrIdx]));
+    } else {
+      setHeaderRowIdx(null);
+      setDetectedColMap(null);
+    }
+  };
+
+  // ── Import: apply mapping, clean numbers, skip header/title rows ──
+  const importExcelData = () => {
+    if (!excelPreview || excelPreview.length === 0) return showToast("No data to import", "err");
+
+    const dataStartIdx = headerRowIdx !== null ? headerRowIdx + 1 : 0;
+    const dataRows = excelPreview.slice(dataStartIdx).filter(r => r.some(c => (c || '').trim() !== ''));
+    if (dataRows.length === 0) return showToast("No data rows found", "err");
+
+    const activeCols = doc.columns.filter(c => ALL_COLS.includes(c) || (doc.customCols || []).includes(c));
+    const useAutoMap = headerRowIdx !== null && detectedColMap && Object.keys(detectedColMap).length > 0;
+    const numericCols = new Set(["qty", "rate", "amount", "srNo"]);
+
+    const newRows = dataRows.map(cells => {
+      const row = defaultRow(doc.customCols || []);
+      if (useAutoMap) {
+        Object.entries(detectedColMap).forEach(([excelIdx, colKey]) => {
+          const raw = (cells[parseInt(excelIdx)] || '').trim();
+          row[colKey] = numericCols.has(colKey) ? cleanNum(raw) : raw;
+        });
+      } else {
+        activeCols.forEach((col, i) => {
+          const raw = (cells[i] || '').trim();
+          row[col] = numericCols.has(col) ? cleanNum(raw) : raw;
+        });
+      }
+      // Auto-calc amount
+      if (doc.showAmount) {
+        const q = parseFloat(row.qty) || 0;
+        const rt = parseFloat(row.rate) || 0;
+        if (q && rt) row.amount = (q * rt).toFixed(2);
+      }
+      return row;
+    });
+
+    if (newRows.length === 0) return showToast("No valid rows found", "err");
+    setDoc(p => ({ ...p, rows: newRows }));
+    showToast(`✅ Imported ${newRows.length} rows from Excel`, "ok");
+    setExcelPasteText(""); setExcelPreview(null); setDetectedColMap(null); setHeaderRowIdx(null);
+    setTableMode("builtin");
+  };
+
 
   const setField = (k, v) => setDoc(p => ({ ...p, [k]: v }));
   const setRow = (rowId, field, val) => setDoc(p => ({
@@ -2578,19 +2802,84 @@ function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
     })
   }));
 
-  const addRow = () => setDoc(p => ({ ...p, rows: [...p.rows, defaultRow()] }));
+  const addRow = () => setDoc(p => ({ ...p, rows: [...p.rows, defaultRow(p.customCols || [])] }));
   const removeRow = (rowId) => setDoc(p => ({ ...p, rows: p.rows.filter(r => r.id !== rowId) }));
 
   const toggleCol = (col) => {
     setDoc(p => {
       const cols = p.columns.includes(col)
         ? p.columns.filter(c => c !== col)
-        : [...p.columns, col].sort((a, b) => ALL_COLS.indexOf(a) - ALL_COLS.indexOf(b));
+        : [...p.columns, col]; // append without re-sorting so user order is preserved
       return { ...p, columns: cols };
     });
   };
 
+  const reorderCols = (fromCol, toCol) => {
+    if (fromCol === toCol) return;
+    setDoc(p => {
+      const cols = [...p.columns];
+      const fromIdx = cols.indexOf(fromCol);
+      const toIdx = cols.indexOf(toCol);
+      if (fromIdx === -1 || toIdx === -1) return p;
+      cols.splice(fromIdx, 1);
+      cols.splice(toIdx, 0, fromCol);
+      return { ...p, columns: cols };
+    });
+  };
+
+  // Add a custom column
+  const addCustomCol = () => {
+    const trimmed = newColName.trim();
+    if (!trimmed) return showToast("Enter a column name", "err");
+    const key = "cc_" + trimmed.toLowerCase().replace(/\s+/g, "_") + "_" + uid().slice(0, 4);
+    setDoc(p => ({
+      ...p,
+      customCols: [...(p.customCols || []), key],
+      customColLabels: { ...(p.customColLabels || {}), [key]: trimmed },
+      columns: [...p.columns, key],
+      rows: p.rows.map(r => ({ ...r, [key]: "" })),
+    }));
+    setNewColName("");
+    showToast(`Column "${trimmed}" added`, "ok");
+  };
+
+  const removeCustomCol = (key) => {
+    setDoc(p => ({
+      ...p,
+      customCols: (p.customCols || []).filter(c => c !== key),
+      customColLabels: Object.fromEntries(Object.entries(p.customColLabels || {}).filter(([k]) => k !== key)),
+      columns: p.columns.filter(c => c !== key),
+      rows: p.rows.map(r => { const rr = { ...r }; delete rr[key]; return rr; }),
+    }));
+  };
+
+  const renameCustomCol = (key, newLabel) => {
+    setDoc(p => ({
+      ...p,
+      customColLabels: { ...(p.customColLabels || {}), [key]: newLabel },
+    }));
+  };
+
+  // Respect the user-defined order stored in doc.columns
+  const allDocCols = doc.columns.filter(c =>
+    ALL_COLS.includes(c) || (doc.customCols || []).includes(c)
+  );
+
+  const getColLabel = (col) => {
+    if (doc.customColLabels && doc.customColLabels[col]) return doc.customColLabels[col];
+    return COL_LABELS[col] || col;
+  };
+
   const totalAmount = doc.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+
+  // GST calculations
+  const gstEnabled = doc.gstEnabled || false;
+  const gstPercent = parseFloat(doc.gstPercent) || 0;
+  const gstType = doc.gstType || "igst";
+  const gstAmount = gstEnabled ? (totalAmount * gstPercent / 100) : 0;
+  const cgstAmount = gstAmount / 2;
+  const sgstAmount = gstAmount / 2;
+  const grandTotal = totalAmount + gstAmount;
 
   const statusOptions = isWO
     ? ["Draft", "Issued", "In Progress", "Completed", "Cancelled", "Final"]
@@ -2624,7 +2913,7 @@ function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
             </select>
           </div>
           <div className="form-group full">
-            <label>Issued To *</label>
+            <label>Issued To (Vendor/Client Name & Address) *</label>
             <input value={doc.issuedTo} onChange={e => setField("issuedTo", e.target.value)} placeholder="Company / Person name, address…" />
           </div>
           <div className="form-group">
@@ -2638,109 +2927,579 @@ function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
         </div>
       </div>
 
-      {/* Column Config */}
+      {/* Vendor / Client Details */}
       <div className="card mb-3">
         <div className="card-hdr">
-          <div className="card-title">Table Columns</div>
-          <div className="card-sub">Toggle which columns appear in the document</div>
+          <div>
+            <div className="card-title">Vendor / Client Details <span style={{ fontSize:".72rem", fontWeight:400, color:"var(--text3)" }}>(Optional — only filled fields will appear on printed document)</span></div>
+          </div>
         </div>
-        <div className="flex gap-2" style={{flexWrap:"wrap"}}>
-          {ALL_COLS.map(col => {
-            const active = doc.columns.includes(col);
-            return (
-              <button key={col} onClick={() => toggleCol(col)}
-                style={{
-                  padding: ".35rem .85rem", borderRadius: 6, fontSize: ".78rem", fontWeight: 700,
-                  fontFamily: "inherit", cursor: "pointer", border: "2px solid",
-                  borderColor: active ? "var(--blue)" : "var(--border2)",
-                  background: active ? "var(--blue)" : "var(--white)",
-                  color: active ? "#fff" : "var(--text3)",
-                  transition: "all .15s",
-                }}>
-                {COL_LABELS[col]}
-              </button>
-            );
-          })}
-          <div className="flex items-center gap-2" style={{marginLeft:"auto"}}>
-            <div className="toggle" onClick={() => setField("showAmount", !doc.showAmount)}>
-              <div className={`toggle-track ${doc.showAmount ? "on" : ""}`}><div className="toggle-thumb"/></div>
-              <span className="toggle-label" style={{fontSize:".78rem"}}>Auto-calculate Amount</span>
-            </div>
+        <div className="form-grid">
+          <div className="form-group">
+            <label>GSTIN / Tax No.</label>
+            <input value={doc.vendorGstin || ""} onChange={e => setField("vendorGstin", e.target.value)} placeholder="e.g. 09ASVPK6249E1Z6" />
+          </div>
+          <div className="form-group">
+            <label>Contact Person Name</label>
+            <input value={doc.vendorContactName || ""} onChange={e => setField("vendorContactName", e.target.value)} placeholder="e.g. Ramesh Kumar" />
+          </div>
+          <div className="form-group">
+            <label>Contact Number</label>
+            <input value={doc.vendorContactNo || ""} onChange={e => setField("vendorContactNo", e.target.value)} placeholder="e.g. +91 98765 43210" />
+          </div>
+          <div className="form-group">
+            <label>Remarks</label>
+            <input value={doc.vendorRemarks || ""} onChange={e => setField("vendorRemarks", e.target.value)} placeholder="Any special note or remark about vendor…" />
           </div>
         </div>
       </div>
 
+      {/* Column Config */}
+      <div className="card mb-3">
+        <div className="card-hdr">
+          <div>
+            <div className="card-title">Table Columns</div>
+            <div className="card-sub">Drag ⠿ to reorder · Click active column to hide · Click inactive to show</div>
+          </div>
+          <div className="toggle" onClick={() => setField("showAmount", !doc.showAmount)}>
+            <div className={`toggle-track ${doc.showAmount ? "on" : ""}`}><div className="toggle-thumb"/></div>
+            <span className="toggle-label" style={{fontSize:".78rem"}}>Auto-calc Amount</span>
+          </div>
+        </div>
+
+        {/* ACTIVE columns — draggable to reorder */}
+        <div style={{marginBottom:".6rem"}}>
+          <div style={{fontSize:".7rem",fontWeight:700,color:"var(--text3)",letterSpacing:".06em",textTransform:"uppercase",marginBottom:".4rem"}}>Active Columns (drag to reorder)</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:".4rem",minHeight:36,padding:".3rem",borderRadius:8,border:"2px dashed var(--border2)",background:"var(--bg3)"}}>
+            {allDocCols.length === 0 && <span style={{fontSize:".78rem",color:"var(--text4)",padding:".3rem .5rem"}}>No columns selected</span>}
+            {allDocCols.map(col => {
+              const isCustom = (doc.customCols || []).includes(col);
+              const isDragging = dragCol === col;
+              return (
+                <div
+                  key={col}
+                  draggable
+                  onDragStart={() => setDragCol(col)}
+                  onDragEnd={() => setDragCol(null)}
+                  onDragOver={e => { e.preventDefault(); }}
+                  onDrop={e => { e.preventDefault(); if (dragCol && dragCol !== col) reorderCols(dragCol, col); setDragCol(null); }}
+                  style={{
+                    display:"flex",alignItems:"center",gap:".3rem",
+                    padding:".3rem .6rem .3rem .4rem",borderRadius:6,
+                    border:`2px solid ${isCustom ? "var(--gold)" : "var(--blue)"}`,
+                    background: isDragging ? "var(--bg2)" : isCustom ? "var(--gold-lt)" : "var(--blue-lt)",
+                    opacity: isDragging ? 0.45 : 1,
+                    cursor:"grab",userSelect:"none",transition:"opacity .15s",
+                  }}
+                >
+                  {/* Drag handle */}
+                  <span style={{color:"var(--text4)",fontSize:"1rem",lineHeight:1,cursor:"grab",marginRight:".1rem"}}>⠿</span>
+                  {/* Label — editable for custom cols */}
+                  {isCustom ? (
+                    <input
+                      value={(doc.customColLabels || {})[col] || ""}
+                      onChange={e => renameCustomCol(col, e.target.value)}
+                      onClick={e => e.stopPropagation()}
+                      style={{fontSize:".78rem",fontWeight:700,border:"none",background:"transparent",color:"var(--gold)",width:Math.max(56, ((doc.customColLabels||{})[col]||col).length * 8),outline:"none",fontFamily:"inherit",cursor:"text"}}
+                      title="Click to rename"
+                    />
+                  ) : (
+                    <span style={{fontSize:".78rem",fontWeight:700,color:"var(--blue)"}}>{COL_LABELS[col]}</span>
+                  )}
+                  {/* Remove button */}
+                  <button
+                    onClick={e => { e.stopPropagation(); isCustom ? removeCustomCol(col) : toggleCol(col); }}
+                    style={{background:"none",border:"none",cursor:"pointer",color:"var(--text4)",fontSize:".8rem",padding:".1rem",lineHeight:1,marginLeft:".1rem"}}
+                    title={isCustom ? "Remove column" : "Hide column"}
+                  >✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* INACTIVE built-in columns — click to add back */}
+        {ALL_COLS.filter(c => !doc.columns.includes(c)).length > 0 && (
+          <div style={{marginBottom:".6rem"}}>
+            <div style={{fontSize:".7rem",fontWeight:700,color:"var(--text3)",letterSpacing:".06em",textTransform:"uppercase",marginBottom:".4rem"}}>Hidden Columns (click to show)</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:".4rem"}}>
+              {ALL_COLS.filter(c => !doc.columns.includes(c)).map(col => (
+                <button key={col} onClick={() => toggleCol(col)}
+                  style={{
+                    padding:".3rem .75rem",borderRadius:6,fontSize:".78rem",fontWeight:600,
+                    fontFamily:"inherit",cursor:"pointer",border:"2px dashed var(--border2)",
+                    background:"var(--white)",color:"var(--text4)",transition:"all .15s",
+                  }}>
+                  + {COL_LABELS[col]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Add custom column UI */}
+        <div style={{display:"flex",alignItems:"center",gap:".5rem",borderTop:"1px solid var(--border)",paddingTop:".75rem",marginTop:".25rem"}}>
+          <span style={{fontSize:".75rem",fontWeight:600,color:"var(--text3)",whiteSpace:"nowrap"}}>➕ Add Custom Column:</span>
+          <input
+            value={newColName}
+            onChange={e => setNewColName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addCustomCol()}
+            placeholder="e.g. Material Code, Discount…"
+            style={{flex:1,maxWidth:240,fontSize:".82rem",padding:".35rem .7rem",border:"1px solid var(--border2)",borderRadius:6}}
+          />
+          <button className="btn btn-gold btn-sm" onClick={addCustomCol}>Add Column</button>
+        </div>
+      </div>
+
+      {/* GST Settings */}
+      <div className="card mb-3">
+        <div className="card-hdr">
+          <div className="card-title">GST / Tax Settings</div>
+          <div className="card-sub">Configure tax applicability for this document</div>
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"1.2rem",alignItems:"flex-start"}}>
+          {/* GST On/Off */}
+          <div style={{display:"flex",flexDirection:"column",gap:".5rem"}}>
+            <div style={{fontSize:".73rem",fontWeight:700,color:"var(--text2)",letterSpacing:".04em",textTransform:"uppercase"}}>GST Applicable</div>
+            <div className="toggle" onClick={() => setField("gstEnabled", !gstEnabled)}>
+              <div className={`toggle-track ${gstEnabled ? "on" : ""}`}><div className="toggle-thumb"/></div>
+              <span className="toggle-label">{gstEnabled ? "Yes — GST Applied" : "No — No Tax"}</span>
+            </div>
+          </div>
+
+          {gstEnabled && (
+            <>
+              {/* GST % */}
+              <div style={{display:"flex",flexDirection:"column",gap:".5rem"}}>
+                <div style={{fontSize:".73rem",fontWeight:700,color:"var(--text2)",letterSpacing:".04em",textTransform:"uppercase"}}>GST Rate (%)</div>
+                <div style={{display:"flex",gap:".4rem",flexWrap:"wrap"}}>
+                  {[5, 12, 18, 28].map(p => (
+                    <button key={p} onClick={() => setField("gstPercent", p)}
+                      style={{
+                        padding:".3rem .8rem",borderRadius:6,fontSize:".82rem",fontWeight:700,
+                        fontFamily:"inherit",cursor:"pointer",border:"2px solid",
+                        borderColor: gstPercent === p ? "var(--blue)" : "var(--border2)",
+                        background: gstPercent === p ? "var(--blue)" : "var(--white)",
+                        color: gstPercent === p ? "#fff" : "var(--text3)",
+                        transition:"all .15s"
+                      }}>{p}%</button>
+                  ))}
+                  <div style={{display:"flex",alignItems:"center",gap:".3rem"}}>
+                    <input
+                      type="number" min={0} max={100} step={0.5}
+                      value={doc.gstPercent}
+                      onChange={e => setField("gstPercent", e.target.value)}
+                      style={{width:72,fontSize:".82rem",padding:".3rem .5rem",border:"1px solid var(--border2)",borderRadius:6}}
+                    />
+                    <span style={{fontSize:".78rem",color:"var(--text3)"}}>% custom</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* GST Type */}
+              <div style={{display:"flex",flexDirection:"column",gap:".5rem"}}>
+                <div style={{fontSize:".73rem",fontWeight:700,color:"var(--text2)",letterSpacing:".04em",textTransform:"uppercase"}}>GST Type</div>
+                <div style={{display:"flex",gap:".5rem"}}>
+                  {[
+                    { val:"igst", label:"IGST", sub:"Inter-state (single)" },
+                    { val:"cgst_sgst", label:"CGST + SGST", sub:"Intra-state (split)" },
+                  ].map(opt => (
+                    <div key={opt.val} onClick={() => setField("gstType", opt.val)}
+                      style={{
+                        padding:".5rem .9rem",borderRadius:8,cursor:"pointer",
+                        border:`2px solid ${gstType === opt.val ? "var(--blue)" : "var(--border2)"}`,
+                        background: gstType === opt.val ? "var(--blue-lt)" : "var(--white)",
+                        transition:"all .15s"
+                      }}>
+                      <div style={{fontWeight:700,fontSize:".8rem",color: gstType === opt.val ? "var(--blue)" : "var(--text2)"}}>{opt.label}</div>
+                      <div style={{fontSize:".68rem",color:"var(--text3)"}}>{opt.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* GST Preview */}
+              {totalAmount > 0 && (
+                <div style={{background:"var(--blue-lt)",border:"1px solid var(--blue-lt2)",borderRadius:8,padding:".8rem 1.1rem",minWidth:220}}>
+                  <div style={{fontSize:".72rem",fontWeight:700,color:"var(--blue)",marginBottom:".45rem",letterSpacing:".05em",textTransform:"uppercase"}}>Tax Preview</div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".8rem",marginBottom:".2rem"}}>
+                    <span style={{color:"var(--text2)"}}>Sub-total</span>
+                    <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>₹{totalAmount.toFixed(2)}</span>
+                  </div>
+                  {gstType === "igst" ? (
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:".8rem",marginBottom:".2rem"}}>
+                      <span style={{color:"var(--blue)"}}>IGST @ {gstPercent}%</span>
+                      <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"var(--blue)"}}>₹{gstAmount.toFixed(2)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:".8rem",marginBottom:".2rem"}}>
+                        <span style={{color:"var(--blue)"}}>CGST @ {gstPercent/2}%</span>
+                        <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"var(--blue)"}}>₹{cgstAmount.toFixed(2)}</span>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:".8rem",marginBottom:".2rem"}}>
+                        <span style={{color:"var(--blue)"}}>SGST @ {gstPercent/2}%</span>
+                        <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"var(--blue)"}}>₹{sgstAmount.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".88rem",fontWeight:800,borderTop:"1px solid var(--blue-lt2)",paddingTop:".35rem",marginTop:".35rem"}}>
+                    <span>Grand Total</span>
+                    <span style={{fontFamily:"'JetBrains Mono',monospace",color:"var(--blue)"}}>₹{grandTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+
       {/* Table Editor */}
       <div className="card mb-3">
         <div className="card-hdr">
-          <div className="card-title">Work Items</div>
-          <button className="btn btn-success btn-sm" onClick={addRow}><Icon n="add" size={13}/>Add Row</button>
+          <div>
+            <div className="card-title">Work Items</div>
+            <div className="card-sub">Choose how to fill the table — edit row by row or paste directly from Excel</div>
+          </div>
+          {/* Mode Toggle */}
+          <div style={{display:"flex",gap:0,border:"1px solid var(--border2)",borderRadius:8,overflow:"hidden",flexShrink:0}}>
+            <button
+              onClick={() => setTableMode("builtin")}
+              style={{
+                padding:".4rem 1rem",fontFamily:"inherit",fontSize:".78rem",fontWeight:700,
+                cursor:"pointer",border:"none",transition:"all .15s",
+                background: tableMode === "builtin" ? "var(--blue)" : "var(--white)",
+                color: tableMode === "builtin" ? "#fff" : "var(--text3)",
+              }}
+            >
+              ✏️ Built-in Editor
+            </button>
+            <button
+              onClick={() => setTableMode("excel")}
+              style={{
+                padding:".4rem 1rem",fontFamily:"inherit",fontSize:".78rem",fontWeight:700,
+                cursor:"pointer",border:"none",transition:"all .15s",
+                background: tableMode === "excel" ? "var(--green)" : "var(--white)",
+                color: tableMode === "excel" ? "#fff" : "var(--text3)",
+                borderLeft:"1px solid var(--border2)",
+              }}
+            >
+              📋 Paste from Excel
+            </button>
+          </div>
         </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
-            <thead>
-              <tr>
-                {doc.columns.map(col => (
-                  <th key={col} style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",textAlign:"left",whiteSpace:"nowrap"}}>
-                    {COL_LABELS[col]}
-                  </th>
-                ))}
-                <th style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",width:40}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {doc.rows.map((row, idx) => (
-                <tr key={row.id} style={{borderBottom:"1px solid var(--border)"}}>
-                  {doc.columns.map(col => (
-                    <td key={col} style={{padding:".3rem .4rem"}}>
-                      {col === "workSpec" ? (
-                        <textarea
-                          value={row[col] || ""}
-                          onChange={e => setRow(row.id, col, e.target.value)}
-                          style={{width:"100%",minHeight:60,fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",resize:"vertical",fontFamily:"inherit"}}
-                          placeholder="Describe the work specifications…"
-                        />
-                      ) : (
-                        <input
-                          value={row[col] || ""}
-                          onChange={e => setRow(row.id, col, e.target.value)}
-                          style={{width:"100%",fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",fontFamily:"inherit"}}
-                          placeholder={col === "srNo" ? String(idx + 1) : ""}
-                          type={["qty","rate","amount"].includes(col) ? "number" : "text"}
-                          readOnly={col === "amount" && doc.showAmount}
-                        />
+
+        {/* ── EXCEL PASTE MODE ── */}
+        {tableMode === "excel" && (
+          <div style={{padding:"0 0 .5rem"}}>
+            {/* Instructions */}
+            <div style={{background:"var(--blue-lt)",border:"1px solid var(--blue-lt2)",borderRadius:8,padding:".85rem 1rem",marginBottom:".9rem",fontSize:".82rem",color:"var(--blue2)"}}>
+              <div style={{fontWeight:700,marginBottom:".35rem"}}>📋 How to paste from Excel:</div>
+              <ol style={{paddingLeft:"1.2rem",lineHeight:1.9,margin:0}}>
+                <li>Select the cells in Excel — <strong>include headers</strong> and all data rows</li>
+                <li>Press <strong>Ctrl+C</strong> to copy</li>
+                <li>Click in the paste area below and press <strong>Ctrl+V</strong></li>
+                <li><strong>Headers are auto-detected</strong> — columns like "Description", "Unit Price", "Qty", "Total Price" etc. will be matched automatically</li>
+                <li>Merged cells, extra columns, and title rows are handled — only matching columns are imported</li>
+                <li>Numbers like <code>1,40,800</code> are cleaned automatically</li>
+              </ol>
+            </div>
+
+            {/* Paste area */}
+            <textarea
+              value={excelPasteText}
+              onChange={e => handleExcelTextChange(e.target.value)}
+              placeholder={"Paste your Excel data here (Ctrl+V)…\n\nWorks with:\n• Simple tables\n• Tables with title rows at top\n• Tables with merged cells\n• Indian number format (1,40,800)\n• Any columns — matching is auto-detected from headers"}
+              style={{
+                width:"100%",minHeight:200,fontSize:".82rem",
+                border:"2px dashed var(--border2)",borderRadius:8,
+                padding:".75rem .9rem",fontFamily:"'JetBrains Mono',monospace",
+                resize:"vertical",background:"var(--bg3)",color:"var(--text)",lineHeight:1.7,
+              }}
+            />
+
+            {/* Preview */}
+            {excelPreview && excelPreview.length > 0 && (() => {
+              const dataStartIdx = headerRowIdx !== null ? headerRowIdx + 1 : 0;
+              const dataRows = excelPreview.slice(dataStartIdx).filter(r => r.some(c => (c || '').trim()));
+              const headerCells = headerRowIdx !== null ? excelPreview[headerRowIdx] : null;
+              const useAutoMap = headerRowIdx !== null && detectedColMap && Object.keys(detectedColMap).length > 0;
+
+              let previewCols;
+              if (useAutoMap) {
+                previewCols = Object.entries(detectedColMap)
+                  .sort(([a],[b]) => parseInt(a) - parseInt(b))
+                  .map(([ei, colKey]) => ({
+                    label: getColLabel(colKey), excelIdx: parseInt(ei), docCol: colKey, matched: true
+                  }));
+                if (headerCells) {
+                  headerCells.forEach((hdr, i) => {
+                    if (!detectedColMap[i]) {
+                      previewCols.push({ label: (hdr||'').replace(/[\r\n]+/g,' ').trim() || `Col ${i+1}`, excelIdx: i, docCol: null, matched: false });
+                    }
+                  });
+                }
+              } else {
+                previewCols = allDocCols.map((col, i) => ({ label: getColLabel(col), excelIdx: i, docCol: col, matched: true }));
+              }
+
+              return (
+                <div style={{marginTop:".9rem"}}>
+                  {/* Header row indicator */}
+                  {headerRowIdx !== null ? (
+                    <div style={{display:"flex",alignItems:"center",gap:".6rem",marginBottom:".6rem",flexWrap:"wrap"}}>
+                      <span style={{background:"var(--green-lt)",color:"var(--green)",fontWeight:700,fontSize:".75rem",padding:".25rem .8rem",borderRadius:20,border:"1px solid var(--green-lt2)"}}>
+                        ✅ Header auto-detected on row {headerRowIdx + 1} — {Object.keys(detectedColMap||{}).length} column{Object.keys(detectedColMap||{}).length !== 1 ? "s" : ""} matched
+                      </span>
+                      {headerRowIdx > 0 && (
+                        <span style={{background:"var(--orange-lt)",color:"var(--orange)",fontSize:".72rem",padding:".15rem .6rem",borderRadius:20,border:"1px solid var(--orange-lt2)"}}>
+                          ⤷ Skipping {headerRowIdx} title row{headerRowIdx > 1 ? "s" : ""} above header
+                        </span>
                       )}
-                    </td>
+                      {allDocCols.filter(c => !Object.values(detectedColMap||{}).includes(c)).map(c => (
+                        <span key={c} style={{background:"#fef3c7",color:"#92400e",fontSize:".7rem",padding:".15rem .55rem",borderRadius:20,border:"1px solid #fde68a"}}>
+                          ⚠ {getColLabel(c)} not found
+                        </span>
+                      ))}
+                      <button onClick={() => { setHeaderRowIdx(null); setDetectedColMap(null); }}
+                        style={{marginLeft:"auto",fontSize:".7rem",color:"var(--text3)",background:"none",border:"1px solid var(--border2)",borderRadius:6,padding:".15rem .5rem",cursor:"pointer"}}>
+                        Clear header
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:".6rem",marginBottom:".6rem"}}>
+                      <span style={{background:"var(--blue-lt)",color:"var(--blue)",fontWeight:700,fontSize:".75rem",padding:".25rem .8rem",borderRadius:20,border:"1px solid var(--blue-lt2)"}}>
+                        📐 No header detected — positional mapping (col 1 → {allDocCols[0] ? getColLabel(allDocCols[0]) : "—"}, col 2 → {allDocCols[1] ? getColLabel(allDocCols[1]) : "—"}, …)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Manual header row picker */}
+                  {excelPreview.length > 1 && (
+                    <div style={{marginBottom:".6rem",display:"flex",alignItems:"center",gap:".5rem",flexWrap:"wrap"}}>
+                      <span style={{fontSize:".73rem",color:"var(--text3)",fontWeight:600}}>Set header row manually:</span>
+                      {excelPreview.slice(0, Math.min(6, excelPreview.length)).map((row, i) => (
+                        <button key={i}
+                          onClick={() => { setHeaderRowIdx(i); setDetectedColMap(detectColsFromHeader(row)); }}
+                          style={{
+                            fontSize:".7rem",padding:".15rem .55rem",borderRadius:6,cursor:"pointer",fontFamily:"inherit",
+                            border:`1px solid ${headerRowIdx === i ? "var(--blue)" : "var(--border2)"}`,
+                            background: headerRowIdx === i ? "var(--blue)" : "var(--white)",
+                            color: headerRowIdx === i ? "#fff" : "var(--text3)",
+                          }}>
+                          Row {i+1}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{fontSize:".73rem",fontWeight:700,color:"var(--text3)",letterSpacing:".06em",textTransform:"uppercase",marginBottom:".4rem"}}>
+                    Preview — {dataRows.length} data row{dataRows.length !== 1 ? "s" : ""} to import
+                  </div>
+
+                  <div style={{overflowX:"auto",border:"1px solid var(--border)",borderRadius:8}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:".75rem"}}>
+                      <thead>
+                        <tr>
+                          {previewCols.map((pc, i) => (
+                            <th key={i} style={{
+                              background: pc.matched ? "var(--navy)" : "#374151",
+                              color: pc.matched ? "#fff" : "#9ca3af",
+                              padding:".4rem .6rem",textAlign:"left",whiteSpace:"nowrap",fontWeight:700,
+                              borderRight:"1px solid rgba(255,255,255,.1)"
+                            }}>
+                              {pc.label}
+                              {pc.matched && <span style={{display:"block",fontWeight:400,opacity:.6,fontSize:".63rem"}}>Excel col {pc.excelIdx + 1}</span>}
+                              {!pc.matched && <span style={{display:"block",fontWeight:400,fontSize:".63rem",color:"#f87171"}}>not imported</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dataRows.slice(0, 10).map((row, ri) => (
+                          <tr key={ri} style={{borderBottom:"1px solid var(--border)"}}>
+                            {previewCols.map((pc, ci) => {
+                              const raw = (row[pc.excelIdx] || '').trim();
+                              // Show cleaned number for numeric cols
+                              const numCols = new Set(["qty","rate","amount","srNo"]);
+                              const displayVal = pc.docCol && numCols.has(pc.docCol) ? (raw.replace(/[,₹$€£]/g,'') || '') : raw;
+                              return (
+                                <td key={ci} style={{
+                                  padding:".3rem .6rem",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                                  background: !pc.matched ? "#1f2937" : raw ? "var(--white)" : "var(--bg3)",
+                                  color: !pc.matched ? "#6b7280" : raw ? "var(--text)" : "var(--text4)",
+                                  fontStyle: !pc.matched ? "italic" : "normal",
+                                  borderRight:"1px solid var(--border)",
+                                }}>
+                                  {displayVal || <em style={{opacity:.35}}>—</em>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {dataRows.length > 10 && (
+                      <div style={{padding:".45rem .8rem",background:"var(--bg3)",fontSize:".72rem",color:"var(--text3)",textAlign:"center",borderTop:"1px solid var(--border)"}}>
+                        …and {dataRows.length - 10} more rows
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+
+            {/* Actions */}
+            <div style={{display:"flex",gap:".6rem",alignItems:"center",marginTop:".9rem",flexWrap:"wrap"}}>
+              <button
+                className="btn btn-success"
+                onClick={importExcelData}
+                disabled={!excelPreview || excelPreview.length === 0}
+              >
+                <Icon n="mark" size={14}/> Import {excelPreview ? (headerRowIdx !== null ? excelPreview.length - headerRowIdx - 1 : excelPreview.length) : 0} Rows → Replace Table
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => { setExcelPasteText(""); setExcelPreview(null); setHeaderRowIdx(null); setDetectedColMap(null); setTableMode("builtin"); }}
+              >
+                Cancel
+              </button>
+              {doc.rows.length > 0 && (
+                <span style={{fontSize:".75rem",color:"var(--text3)",marginLeft:".3rem"}}>
+                  ⚠️ This will replace {doc.rows.length} existing row{doc.rows.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── BUILT-IN EDITOR MODE ── */}
+        {tableMode === "builtin" && (
+          <>
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:".5rem"}}>
+              <button className="btn btn-success btn-sm" onClick={addRow}><Icon n="add" size={13}/>Add Row</button>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
+                <thead>
+                  <tr>
+                    {allDocCols.map(col => (
+                      <th key={col} style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",textAlign:"left",whiteSpace:"nowrap"}}>
+                        {getColLabel(col)}
+                      </th>
+                    ))}
+                    <th style={{background:"var(--navy)",color:"#fff",padding:".5rem .7rem",fontSize:".72rem",width:40}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {doc.rows.map((row, idx) => (
+                    <tr key={row.id} style={{borderBottom:"1px solid var(--border)"}}>
+                      {allDocCols.map(col => (
+                        <td key={col} style={{padding:".3rem .4rem"}}>
+                          {col === "workSpec" ? (
+                            <textarea
+                              value={row[col] || ""}
+                              onChange={e => setRow(row.id, col, e.target.value)}
+                              style={{width:"100%",minHeight:60,fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",resize:"vertical",fontFamily:"inherit"}}
+                              placeholder="Describe the work specifications…"
+                            />
+                          ) : (
+                            <input
+                              value={row[col] || ""}
+                              onChange={e => setRow(row.id, col, e.target.value)}
+                              style={{width:"100%",fontSize:".82rem",border:"1px solid var(--border2)",borderRadius:4,padding:".3rem .5rem",fontFamily:"inherit"}}
+                              placeholder={col === "srNo" ? String(idx + 1) : ""}
+                              type={["qty","rate","amount"].includes(col) ? "number" : "text"}
+                              readOnly={col === "amount" && doc.showAmount}
+                            />
+                          )}
+                        </td>
+                      ))}
+                      <td style={{padding:".3rem .4rem",textAlign:"center"}}>
+                        <button onClick={() => removeRow(row.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red)",fontSize:".9rem",padding:".2rem"}}>✕</button>
+                      </td>
+                    </tr>
                   ))}
-                  <td style={{padding:".3rem .4rem",textAlign:"center"}}>
-                    <button onClick={() => removeRow(row.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red)",fontSize:".9rem",padding:".2rem"}}>✕</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            {doc.columns.includes("amount") && (
-              <tfoot>
+                </tbody>
+
+                {doc.columns.includes("amount") && (
+                  <tfoot>
                 <tr>
-                  <td colSpan={doc.columns.length - 1} style={{padding:".6rem .7rem",textAlign:"right",fontWeight:700,fontSize:".88rem",background:"var(--bg3)"}}>Total Amount:</td>
+                  <td colSpan={allDocCols.length - 1} style={{padding:".6rem .7rem",textAlign:"right",fontWeight:700,fontSize:".88rem",background:"var(--bg3)"}}>Sub-total:</td>
                   <td style={{padding:".6rem .7rem",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"var(--green)",background:"var(--green-lt)"}}>
                     {totalAmount > 0 ? totalAmount.toFixed(2) : "—"}
                   </td>
                   <td style={{background:"var(--bg3)"}}></td>
                 </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
+                {gstEnabled && totalAmount > 0 && (
+                  gstType === "igst" ? (
+                    <tr>
+                      <td colSpan={allDocCols.length - 1} style={{padding:".45rem .7rem",textAlign:"right",fontSize:".83rem",background:"var(--blue-lt)",color:"var(--blue)",fontWeight:600}}>IGST @ {gstPercent}%:</td>
+                      <td style={{padding:".45rem .7rem",fontFamily:"'JetBrains Mono',monospace",color:"var(--blue)",fontWeight:700,background:"var(--blue-lt)"}}>{gstAmount.toFixed(2)}</td>
+                      <td style={{background:"var(--blue-lt)"}}></td>
+                    </tr>
+                  ) : (
+                    <>
+                      <tr>
+                        <td colSpan={allDocCols.length - 1} style={{padding:".35rem .7rem",textAlign:"right",fontSize:".83rem",background:"var(--blue-lt)",color:"var(--blue)",fontWeight:600}}>CGST @ {gstPercent/2}%:</td>
+                        <td style={{padding:".35rem .7rem",fontFamily:"'JetBrains Mono',monospace",color:"var(--blue)",fontWeight:700,background:"var(--blue-lt)"}}>{cgstAmount.toFixed(2)}</td>
+                        <td style={{background:"var(--blue-lt)"}}></td>
+                      </tr>
+                      <tr>
+                        <td colSpan={allDocCols.length - 1} style={{padding:".35rem .7rem",textAlign:"right",fontSize:".83rem",background:"var(--blue-lt)",color:"var(--blue)",fontWeight:600}}>SGST @ {gstPercent/2}%:</td>
+                        <td style={{padding:".35rem .7rem",fontFamily:"'JetBrains Mono',monospace",color:"var(--blue)",fontWeight:700,background:"var(--blue-lt)"}}>{sgstAmount.toFixed(2)}</td>
+                        <td style={{background:"var(--blue-lt)"}}></td>
+                      </tr>
+                    </>
+                  )
+                )}
+                {gstEnabled && totalAmount > 0 && (
+                  <tr>
+                    <td colSpan={allDocCols.length - 1} style={{padding:".6rem .7rem",textAlign:"right",fontWeight:800,fontSize:".9rem",background:"var(--navy)",color:"#fff"}}>Grand Total:</td>
+                    <td style={{padding:".6rem .7rem",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"var(--gold2)",background:"var(--navy)",fontSize:".95rem"}}>{grandTotal.toFixed(2)}</td>
+                    <td style={{background:"var(--navy)"}}></td>
+                  </tr>
+                )}
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Notes */}
+      {/* Notes with Rich Text Toolbar */}
       <div className="card mb-3">
-        <div className="card-hdr"><div className="card-title">Notes / Terms & Conditions</div><div className="card-sub">No character limit — add as much detail as needed</div></div>
-        <textarea
-          value={doc.notes || ""}
-          onChange={e => setField("notes", e.target.value)}
-          placeholder="Add payment terms, delivery conditions, warranty info, special instructions, or any notes here… (No limit)"
-          style={{width:"100%",minHeight:140,fontSize:".85rem",border:"1px solid var(--border2)",borderRadius:6,padding:".7rem .9rem",fontFamily:"inherit",resize:"vertical"}}
+        <div className="card-hdr"><div className="card-title">Notes / Terms & Conditions</div><div className="card-sub">Select text, then use the toolbar to format — No character limit</div></div>
+        <RichToolbar onFormat={(tag, val) => {
+          const el = document.getElementById("notes-editor");
+          if (!el) return;
+          el.focus();
+          if (tag === "bold") document.execCommand("bold", false, null);
+          else if (tag === "italic") document.execCommand("italic", false, null);
+          else if (tag === "underline") document.execCommand("underline", false, null);
+          else if (tag === "size") document.execCommand("fontSize", false, val);
+          else if (tag === "color") document.execCommand("foreColor", false, val);
+        }} />
+        <div
+          id="notes-editor"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={e => setField("notes", e.currentTarget.innerHTML)}
+          ref={el => {
+            if (el && document.activeElement !== el) {
+              el.innerHTML = doc.notes || "";
+            }
+          }}
+          style={{
+            width:"100%", minHeight:140, fontSize:".85rem",
+            border:"1px solid var(--border2)", borderRadius:"0 0 6px 6px",
+            padding:".7rem .9rem", fontFamily:"inherit", lineHeight:1.6,
+            outline:"none", background:"var(--white)", color:"var(--text)",
+            wordBreak:"break-word"
+          }}
         />
       </div>
 
@@ -2756,18 +3515,43 @@ function DocEditor({ type, doc, setDoc, onSave, onCancel }) {
 // ─── PRINT: WORK ORDER HTML ────────────────────────────────────────────────────
 function generateWOHTML(wo) {
   const totalAmount = wo.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  const colsHtml = wo.columns.map(col => `<th>${COL_LABELS[col]}</th>`).join("");
+  const allCols = [
+    ...wo.columns.filter(c => ALL_COLS.includes(c)),
+    ...(wo.customCols || []).filter(c => wo.columns.includes(c)),
+  ];
+  const getLabel = col => (wo.customColLabels && wo.customColLabels[col]) ? wo.customColLabels[col] : (COL_LABELS[col] || col);
+  const colsHtml = allCols.map(col => `<th>${getLabel(col)}</th>`).join("");
   const rowsHtml = wo.rows.map((row, idx) => {
-    const cells = wo.columns.map(col => {
+    const cells = allCols.map(col => {
       const val = col === "srNo" ? (row[col] || idx + 1) : (row[col] || "");
       return `<td style="vertical-align:top;${col === "workSpec" ? "text-align:left;min-width:200px;" : "text-align:center;"}">${val}</td>`;
     }).join("");
     return `<tr style="border-bottom:1px solid #e2e8f0">${cells}</tr>`;
   }).join("");
 
-  const totalRow = wo.columns.includes("amount") && totalAmount > 0
-    ? `<tr style="background:#f0fdf4;font-weight:700;font-size:13px"><td colspan="${wo.columns.length - 1}" style="text-align:right;padding:8px 12px;border-top:2px solid #0d1b2e">TOTAL AMOUNT</td><td style="text-align:center;padding:8px 12px;border-top:2px solid #0d1b2e;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
+  const gstEnabled = wo.gstEnabled || false;
+  const gstPercent = parseFloat(wo.gstPercent) || 0;
+  const gstType = wo.gstType || "igst";
+  const gstAmount = gstEnabled ? (totalAmount * gstPercent / 100) : 0;
+  const grandTotal = totalAmount + gstAmount;
+  const numCols = allCols.length;
+
+  const gstRows = gstEnabled && totalAmount > 0 ? (
+    gstType === "igst"
+      ? `<tr style="background:#eff6ff"><td colspan="${numCols - 1}" style="text-align:right;padding:7px 12px;font-weight:600;color:#1854d4">IGST @ ${gstPercent}%</td><td style="text-align:center;padding:7px 12px;color:#1854d4;font-family:'Courier New',monospace;font-weight:700">${gstAmount.toFixed(2)}</td></tr>`
+      : `<tr style="background:#eff6ff"><td colspan="${numCols - 1}" style="text-align:right;padding:6px 12px;font-weight:600;color:#1854d4">CGST @ ${gstPercent/2}%</td><td style="text-align:center;padding:6px 12px;color:#1854d4;font-family:'Courier New',monospace;font-weight:700">${(gstAmount/2).toFixed(2)}</td></tr>
+         <tr style="background:#eff6ff"><td colspan="${numCols - 1}" style="text-align:right;padding:6px 12px;font-weight:600;color:#1854d4">SGST @ ${gstPercent/2}%</td><td style="text-align:center;padding:6px 12px;color:#1854d4;font-family:'Courier New',monospace;font-weight:700">${(gstAmount/2).toFixed(2)}</td></tr>`
+  ) : "";
+
+  const subTotalRow = wo.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:#f0fdf4;font-weight:700"><td colspan="${numCols - 1}" style="text-align:right;padding:7px 12px;border-top:2px solid #0d1b2e">${gstEnabled ? "SUB-TOTAL" : "TOTAL AMOUNT"}</td><td style="text-align:center;padding:7px 12px;border-top:2px solid #0d1b2e;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
     : "";
+
+  const grandTotalRow = gstEnabled && wo.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:#0d1b2e;font-weight:800;font-size:13px"><td colspan="${numCols - 1}" style="text-align:right;padding:9px 12px;color:#fff">GRAND TOTAL (incl. GST)</td><td style="text-align:center;padding:9px 12px;color:#c9922a;font-family:'Courier New',monospace;font-size:14px">${grandTotal.toFixed(2)}</td></tr>`
+    : "";
+
+  const totalRow = subTotalRow + gstRows + grandTotalRow;
 
   return `<!DOCTYPE html><html><head><title>Work Order ${wo.serialNo}</title>
 <style>
@@ -2797,7 +3581,7 @@ td{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}
 tbody tr:hover{background:#f8fafc}
 .notes-section{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:14px 16px;margin-bottom:16px}
 .notes-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b45309;margin-bottom:6px}
-.notes-text{font-size:12px;color:#0f172a;white-space:pre-wrap;line-height:1.7}
+.notes-text{font-size:12px;color:#0f172a;line-height:1.7}
 .footer-bar{display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;margin-top:10px}
 .auto-gen-box{background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:8px 14px;font-size:10px;color:#0369a1;text-align:center;margin-top:14px}
 .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;margin-left:8px}
@@ -2831,8 +3615,12 @@ ${wo.subject ? `<div class="subject-bar">Re: ${wo.subject}</div>` : ""}
 
 <div class="issued-box">
   <div class="issued-card">
-    <div class="issued-label">Issued To</div>
+    <div class="issued-label">Issued To (Vendor / Client)</div>
     <div class="issued-value">${wo.issuedTo}</div>
+    ${wo.vendorGstin ? `<div style="font-size:11px;color:#64748b;margin-top:4px"><strong>GSTIN:</strong> ${wo.vendorGstin}</div>` : ""}
+    ${wo.vendorContactName ? `<div style="font-size:11px;color:#64748b;margin-top:2px"><strong>Contact:</strong> ${wo.vendorContactName}</div>` : ""}
+    ${wo.vendorContactNo ? `<div style="font-size:11px;color:#64748b;margin-top:2px"><strong>Phone:</strong> ${wo.vendorContactNo}</div>` : ""}
+    ${wo.vendorRemarks ? `<div style="font-size:11px;color:#b45309;margin-top:4px;background:#fffbeb;padding:4px 8px;border-radius:4px;border:1px solid #fde68a"><strong>Remarks:</strong> ${wo.vendorRemarks}</div>` : ""}
   </div>
   <div class="issued-card" style="flex:0 0 220px">
     <div class="issued-label">Issued By</div>
@@ -2860,18 +3648,43 @@ ${wo.notes ? `<div class="notes-section"><div class="notes-label">Notes / Terms 
 // ─── PRINT: QUOTATION HTML ─────────────────────────────────────────────────────
 function generateQTHTML(q) {
   const totalAmount = q.rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  const colsHtml = q.columns.map(col => `<th>${COL_LABELS[col]}</th>`).join("");
+  const allCols = [
+    ...q.columns.filter(c => ALL_COLS.includes(c)),
+    ...(q.customCols || []).filter(c => q.columns.includes(c)),
+  ];
+  const getLabel = col => (q.customColLabels && q.customColLabels[col]) ? q.customColLabels[col] : (COL_LABELS[col] || col);
+  const colsHtml = allCols.map(col => `<th>${getLabel(col)}</th>`).join("");
   const rowsHtml = q.rows.map((row, idx) => {
-    const cells = q.columns.map(col => {
+    const cells = allCols.map(col => {
       const val = col === "srNo" ? (row[col] || idx + 1) : (row[col] || "");
       return `<td style="vertical-align:top;${col === "workSpec" ? "text-align:left;min-width:200px;" : "text-align:center;"}">${val}</td>`;
     }).join("");
     return `<tr style="border-bottom:1px solid #e2e8f0">${cells}</tr>`;
   }).join("");
 
-  const totalRow = q.columns.includes("amount") && totalAmount > 0
-    ? `<tr style="background:#f0fdf4;font-weight:700;font-size:13px"><td colspan="${q.columns.length - 1}" style="text-align:right;padding:8px 12px;border-top:2px solid #0d1b2e">TOTAL AMOUNT</td><td style="text-align:center;padding:8px 12px;border-top:2px solid #0d1b2e;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
+  const gstEnabled = q.gstEnabled || false;
+  const gstPercent = parseFloat(q.gstPercent) || 0;
+  const gstType = q.gstType || "igst";
+  const gstAmount = gstEnabled ? (totalAmount * gstPercent / 100) : 0;
+  const grandTotal = totalAmount + gstAmount;
+  const numCols = allCols.length;
+
+  const gstRows = gstEnabled && totalAmount > 0 ? (
+    gstType === "igst"
+      ? `<tr style="background:#ede9fe"><td colspan="${numCols - 1}" style="text-align:right;padding:7px 12px;font-weight:600;color:#7c3aed">IGST @ ${gstPercent}%</td><td style="text-align:center;padding:7px 12px;color:#7c3aed;font-family:'Courier New',monospace;font-weight:700">${gstAmount.toFixed(2)}</td></tr>`
+      : `<tr style="background:#ede9fe"><td colspan="${numCols - 1}" style="text-align:right;padding:6px 12px;font-weight:600;color:#7c3aed">CGST @ ${gstPercent/2}%</td><td style="text-align:center;padding:6px 12px;color:#7c3aed;font-family:'Courier New',monospace;font-weight:700">${(gstAmount/2).toFixed(2)}</td></tr>
+         <tr style="background:#ede9fe"><td colspan="${numCols - 1}" style="text-align:right;padding:6px 12px;font-weight:600;color:#7c3aed">SGST @ ${gstPercent/2}%</td><td style="text-align:center;padding:6px 12px;color:#7c3aed;font-family:'Courier New',monospace;font-weight:700">${(gstAmount/2).toFixed(2)}</td></tr>`
+  ) : "";
+
+  const subTotalRow = q.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:#f0fdf4;font-weight:700"><td colspan="${numCols - 1}" style="text-align:right;padding:7px 12px;border-top:2px solid #1854d4">${gstEnabled ? "SUB-TOTAL" : "TOTAL AMOUNT"}</td><td style="text-align:center;padding:7px 12px;border-top:2px solid #1854d4;color:#059669;font-family:'Courier New',monospace">${totalAmount.toFixed(2)}</td></tr>`
     : "";
+
+  const grandTotalRow = gstEnabled && q.columns.includes("amount") && totalAmount > 0
+    ? `<tr style="background:linear-gradient(90deg,#1854d4,#7c3aed);font-weight:800;font-size:13px"><td colspan="${numCols - 1}" style="text-align:right;padding:9px 12px;color:#fff">GRAND TOTAL (incl. GST)</td><td style="text-align:center;padding:9px 12px;color:#fef3c7;font-family:'Courier New',monospace;font-size:14px">${grandTotal.toFixed(2)}</td></tr>`
+    : "";
+
+  const totalRow = subTotalRow + gstRows + grandTotalRow;
 
   return `<!DOCTYPE html><html><head><title>Quotation ${q.serialNo}</title>
 <style>
@@ -2901,7 +3714,7 @@ td{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px}
 tbody tr:nth-child(even){background:#f8fafc}
 .notes-section{background:#faf5ff;border:1px solid #ddd6fe;border-radius:6px;padding:14px 16px;margin-bottom:16px}
 .notes-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c3aed;margin-bottom:6px}
-.notes-text{font-size:12px;color:#0f172a;white-space:pre-wrap;line-height:1.7}
+.notes-text{font-size:12px;color:#0f172a;line-height:1.7}
 .validity-box{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 14px;font-size:11px;color:#b45309;font-weight:600;margin-bottom:14px;text-align:center}
 .footer-bar{display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px;margin-top:10px}
 .auto-gen-box{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:8px 14px;font-size:10px;color:#7c3aed;text-align:center;margin-top:14px}
@@ -2936,8 +3749,12 @@ ${q.subject ? `<div class="subject-bar">Re: ${q.subject}</div>` : ""}
 
 <div class="issued-box">
   <div class="issued-card">
-    <div class="issued-label">Quotation For</div>
+    <div class="issued-label">Quotation For (Vendor / Client)</div>
     <div class="issued-value">${q.issuedTo}</div>
+    ${q.vendorGstin ? `<div style="font-size:11px;color:#64748b;margin-top:4px"><strong>GSTIN:</strong> ${q.vendorGstin}</div>` : ""}
+    ${q.vendorContactName ? `<div style="font-size:11px;color:#64748b;margin-top:2px"><strong>Contact:</strong> ${q.vendorContactName}</div>` : ""}
+    ${q.vendorContactNo ? `<div style="font-size:11px;color:#64748b;margin-top:2px"><strong>Phone:</strong> ${q.vendorContactNo}</div>` : ""}
+    ${q.vendorRemarks ? `<div style="font-size:11px;color:#b45309;margin-top:4px;background:#fffbeb;padding:4px 8px;border-radius:4px;border:1px solid #fde68a"><strong>Remarks:</strong> ${q.vendorRemarks}</div>` : ""}
   </div>
   <div class="issued-card" style="flex:0 0 220px">
     <div class="issued-label">Prepared By</div>
